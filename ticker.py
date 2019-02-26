@@ -3,7 +3,10 @@ import numpy as np
 import json
 import multiprocessing
 import pandas as pd
-from yahoo_fin import stock_info as si
+from yahoo_fin.stock_info import *
+
+
+# http://theautomatic.net/yahoo_fin-documentation/#get_analysts_info
 
 
 class Ticker():
@@ -11,14 +14,29 @@ class Ticker():
     def __init__(self, ticker):
         self.ticker = ticker
 
-        self.quote = self.get_quote()
-        self.i_s = self.get_financial_rec("financials")
-        self.b_s = self.get_financial_rec("balance-sheet")
-        self.c_f = self.get_financial_rec("cash-flow")
+        self.income_statement = self.refine(get_income_statement(ticker))
+        self.balance_sheet = self.refine(get_balance_sheet(ticker))
+        self.cash_flow = self.refine(get_cash_flow(ticker))
+        self.market_price = get_live_price(ticker)
+        self.quote = get_quote_table(ticker, dict_result=True)
+        self.stats = self.convert2dict(get_stats(ticker))
 
-        self.shares = self.compute_outstanding_shares()
+        self.shares = self.income_statement['Net Income Applicable To Common Shares'][0] / \
+                      float(self.stats['Diluted EPS (ttm)'])
 
         print('done')
+
+    @staticmethod
+    def refine(df):
+        df = df.dropna().replace("-", "0").T
+        df.columns = df.iloc[0]
+        df = df.drop(df.index[0])
+        convert_type = {c: 'int64' for c in list(df)}
+        return df.astype(convert_type) * 10 ** 3
+
+    @staticmethod
+    def convert2dict(df):
+        return {df['Attribute'][i]: df['Value'][i] for i in range(len(df))}
 
     def describe(self):
         print(
@@ -30,52 +48,3 @@ class Ticker():
         print("Dividend Yield is {:>s} (>7%).".format(self.quote["Forward Dividend & Yield"], self.ticker))
 
         print('done')
-
-    def get_market_price(self):
-        return si.get_live_price(self.ticker)
-
-    def get_quote(self):
-        return si.get_quote_table(self.ticker, dict_result=True)
-
-    def get_financial_rec(self, doc_type):
-        '''
-        All numbers in thousands $[[
-
-        :param doc_type:
-        :return:
-        '''
-
-        document = pd.read_html(
-            'https://finance.yahoo.com/quote/{:s}/{:s}?p={:s}'.format(self.ticker, doc_type, self.ticker))
-
-        df = document[0].dropna().replace("-", 0).T
-
-        df.columns = df.iloc[0]
-        df = df.drop(df.index[0])
-
-        col_names = list(df)
-
-        annual_doc = df.rename(columns={col_names[0]: 'Date', })
-
-        convert_type = {c: 'int64' for c in list(df)}
-        convert_type['Date'] = pd.datetime
-        del convert_type[col_names[0]]
-
-        annual_doc = annual_doc.astype(convert_type)
-
-        return annual_doc
-
-    def compute_outstanding_shares(self):
-        df = self.b_s
-        return df["Preferred Stock"] + df["Common Stock"] - df["Treasury Stock"]
-
-    def compute_eps(self):
-        '''
-        Earnings per Share: This is probably the most important number to understand. This is the earnings per 1 share
-        or the profit for 1 share. To calculate this number, divide the company’s total net income by the common shares
-        outstanding.
-
-        :return:
-        '''
-        # eps = self.i_s.loc['Net Income Applicable To Common Shares'] / df.loc['b']
-        pass

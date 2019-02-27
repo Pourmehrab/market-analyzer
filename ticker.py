@@ -4,6 +4,8 @@ import json
 import multiprocessing
 import pandas as pd
 from yahoo_fin.stock_info import *
+from sklearn import linear_model
+import statsmodels.api as sm
 
 
 # http://theautomatic.net/yahoo_fin-documentation/#get_analysts_info
@@ -23,6 +25,11 @@ class Ticker():
 
         self.shares = self.income_statement['Net Income Applicable To Common Shares'][0] / \
                       float(self.stats['Diluted EPS (ttm)'])
+
+        temp = self.balance_sheet['Total Assets'] - self.balance_sheet['Total Liabilities']
+        self.book_val = temp.iloc[:].values
+
+        self.r2, self.slope = self.stability()
 
         print('done')
 
@@ -47,4 +54,15 @@ class Ticker():
 
         print("Dividend Yield is {:>s} (>7%).".format(self.quote["Forward Dividend & Yield"], self.ticker))
 
+        print("The 4-yr book value grew at {:>2.1f} M, r2 is {:>d} (>95).".format(self.slope, self.r2))
+
         print('done')
+
+    def stability(self):
+        Y = self.book_val
+        X = np.array([len(Y) - i for i in range(len(Y))], dtype=int)
+        X = sm.add_constant(X)
+        model = sm.OLS(Y, X).fit()
+        # print(model.summary())
+
+        return int(model.rsquared * 100), model.params[1] / 10 ** 6

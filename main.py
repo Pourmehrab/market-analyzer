@@ -11,6 +11,7 @@ import mechanize
 import matplotlib.pyplot as plt
 import xlrd
 
+
 def lets_do_it(ticker):
     tick = {'ticker': ticker, }
 
@@ -98,12 +99,18 @@ def pull_sp500_tickers():
     return raw_data[0].iloc[1:, 1]
 
 
-def get_federal_note(yr):
+def get_yield_curve(yr):
     raw_data = pd.read_html(
         'https://www.treasury.gov/resource-center/data-chart-center/interest-rates/Pages/TextView.aspx?data=yield')
-    row = raw_data[1].iloc[-1, 1:].astype(float)
-    plt.plot(raw_data[1].iloc[0, 1:], raw_data[1].iloc[-1, 1:].astype(float))
-    plt.show()
+    years = raw_data[1].iloc[0, 1:]
+    rates = list(raw_data[1].iloc[-1, 1:].astype(float))
+    fig = plt.plot(years, rates)
+    # plt.show()
+    plt.yticks([])
+
+    for i in range(len(years)):
+        plt.text(i,rates[i],str(rates[i]),verticalalignment='center')
+    plt.savefig('yield_curve.pdf', format='pdf')
 
     return float(raw_data[1].iloc[-1, yr]) / 100
 
@@ -132,17 +139,11 @@ if __name__ == "__main__":
     
     
     """
-    # intrinsic_val_cal = 'https://www.buffettsbooks.com/how-to-invest-in-stocks/intermediate-course/lesson-21/'
-    #
-    # br = mechanize.Browser()
-    # br.open(intrinsic_val_cal)
-    rate = get_federal_note(10)
+    rate = get_yield_curve(10)
 
     # client = wolframalpha.Client('ULQLV8-TQ3HG44Q7R')
     # res = client.query('p/e atvi')
     # print(res)
-
-
 
     tick = lets_do_it("ATVI")
     column_names = tick.keys()

@@ -2,39 +2,44 @@ import pandas as pd
 import numpy as np
 import json
 import multiprocessing
-import pandas as pd
 from yahoo_fin.stock_info import *
 from sklearn import linear_model
 import statsmodels.api as sm
 import wolframalpha
 import pprint
-
+import mechanize
+import matplotlib.pyplot as plt
+import xlrd
 
 def lets_do_it(ticker):
     tick = {'ticker': ticker, }
 
-    income_statement, balance_sheet, cash_flow = get_fundamental_docs(ticker)
-    book_val = get_book_val(balance_sheet)
-    if len(book_val) < 1:
+    try:
+        income_statement, balance_sheet, cash_flow = get_fundamental_docs(ticker)
+        book_val = get_book_val(balance_sheet)
+        if len(book_val) < 1:
+            return None
+
+        tick['old book value'], tick['curr book value'] = book_val[0], book_val[-1]
+        tick['yrs in between'] = len(book_val)
+
+        tick['4yr book value rate'] = bv_4yr_rate(book_val)
+
+        stats = convert2dict(get_stats(ticker))
+        tick['trailing annual dividend yield'] = convert_str_percent(stats['Trailing Annual Dividend Yield 3'])
+        tick['avg rate of return'] = tick['4yr book value rate'] + tick['trailing annual dividend yield']
+
+        tick['profit margin'] = convert_str_percent(stats['Profit Margin'])
+
+        tick['price/book (mrq)'] = float(stats['Price/Book (mrq)'])
+        tick['4yr book r2'], tick['4yr book slope'] = book_val_growth(book_val)
+
+        tick['market price'] = get_live_price(ticker)
+        tick['4yr avg debt ratio'] = compute_avg_debt_ratio(balance_sheet)
+
+        return tick
+    except():
         return None
-    tick['4yr book value rate'] = bv_4yr_rate(book_val)
-
-    # quote = get_quote_table(ticker, dict_result=True)
-    stats = convert2dict(get_stats(ticker))
-    tick['trailing annual dividend yield'] = convert_str_percent(stats['Trailing Annual Dividend Yield 3'])
-    tick['avg rate of return'] = tick['4yr book value rate'] + tick['trailing annual dividend yield']
-
-    tick['profit margin'] = convert_str_percent(stats['Profit Margin'])
-    shares = income_statement['Net Income Applicable To Common Shares'][0] / \
-             float(stats['Diluted EPS (ttm)'])
-
-    tick['price/book (mrq)'] = float(stats['Price/Book (mrq)'])
-    tick['4yr book r2'], tick['4yr book slope'] = book_val_growth(book_val)
-
-    tick['market price'] = get_live_price(ticker)
-    tick['4yr avg debt ratio'] = compute_avg_debt_ratio(balance_sheet)
-
-    return tick
 
 
 def isnan(x):
@@ -80,8 +85,8 @@ def refine(df):
     df = df.dropna().replace("-", "0").T
     df.columns = df.iloc[0]
     df = df.drop(df.index[0])
-    convert_type = {c: 'int64' for c in list(df)}
-    return df.astype(convert_type)
+    convert_type = {c: 'float' for c in list(df)}
+    return df.astype(convert_type) * 1000
 
 
 def convert2dict(df):
@@ -91,6 +96,16 @@ def convert2dict(df):
 def pull_sp500_tickers():
     raw_data = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
     return raw_data[0].iloc[1:, 1]
+
+
+def get_federal_note(yr):
+    raw_data = pd.read_html(
+        'https://www.treasury.gov/resource-center/data-chart-center/interest-rates/Pages/TextView.aspx?data=yield')
+    row = raw_data[1].iloc[-1, 1:].astype(float)
+    plt.plot(raw_data[1].iloc[0, 1:], raw_data[1].iloc[-1, 1:].astype(float))
+    plt.show()
+
+    return float(raw_data[1].iloc[-1, yr]) / 100
 
 
 def book_val_growth(book_val):
@@ -104,12 +119,34 @@ def book_val_growth(book_val):
 
 
 if __name__ == "__main__":
+    """
+    It uses the following factors to decided on composition of portfolio:
+    
+     1) analyst judgment after reading the reports
+     2) budget with taxation info
+     3) scenarios (inflation, tax, security performance)
+     4) financial statements (runs checks)
+     5) treasury yield curve
+     6) 
+     
+    
+    
+    """
+    # intrinsic_val_cal = 'https://www.buffettsbooks.com/how-to-invest-in-stocks/intermediate-course/lesson-21/'
+    #
+    # br = mechanize.Browser()
+    # br.open(intrinsic_val_cal)
+    rate = get_federal_note(10)
+
     # client = wolframalpha.Client('ULQLV8-TQ3HG44Q7R')
     # res = client.query('p/e atvi')
     # print(res)
 
-    tick = lets_do_it("DATA")
+
+
+    tick = lets_do_it("ATVI")
     column_names = tick.keys()
+    print('done.')
 
     dic = {c: [tick[c], ] for c in column_names}
 
@@ -120,7 +157,8 @@ if __name__ == "__main__":
         if tick is not None:
             for c in column_names:
                 dic[c].append(tick[c])
-        print(i, "/", n)
+            print(i, "/", n)
+
     df = pd.DataFrame.from_dict(dic)
     df.to_csv('analysis.csv', index=False)
     print("done!")
